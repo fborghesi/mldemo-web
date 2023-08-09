@@ -6,8 +6,28 @@
     "start": "next start"
   },
   "dependencies": {
-    "next": "latest",
-    "react": "18.2.0",
-    "react-dom": "18.2.0"
+    "@emotion/react": "^11.11.1",
+    "@emotion/styled": "^11.11.0",
+    "@hookform/resolvers": "^3.2.0",
+    "@mui/icons-material": "^5.14.3",
+    "@mui/material": "^5.14.4",
+    "@mui/x-data-grid": "^6.11.0",
+    "axios": "^1.4.0",
+    "cookies-next": "^2.1.2",
+    "js-base64": "^3.7.5",
+    "next": "^13.4.13",
+    "react": "^18.2.0",
+    "react-cookie": "^4.1.1",
+    "react-dom": "^18.2.0",
+    "react-dropzone": "^14.2.3",
+    "react-google-button": "^0.7.2",
+    "react-hook-form": "^7.45.4",
+    "react-material-ui-carousel": "^3.4.2",
+    "yup": "^1.2.0"
+  },
+  "devDependencies": {
+    "@types/node": "20.4.9",
+    "@types/react": "18.2.20",
+    "typescript": "5.1.6"
   }
 }
