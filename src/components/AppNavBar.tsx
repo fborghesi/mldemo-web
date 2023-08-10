@@ -7,7 +7,7 @@ import {
     Typography,
     Button,
 } from "@mui/material";
-import Link from "next/link";
+import LogoutIcon from '@mui/icons-material/Logout';
 import { useRouter } from "next/router";
 import React, { useState, MouseEvent } from "react";
 import { UserType } from "../api/UserType";
@@ -110,8 +110,8 @@ const AppNavBar = (props: AppNavBarProps) => {
                         sx={{ flexGrow: 1, margin: "5px" }}
                     />
                     {user && (
-                        <Button color="inherit" onClick={logoutClickHandler}>
-                            Logout {formatUserName(user)}
+                        <Button color="inherit" onClick={logoutClickHandler} startIcon=<LogoutIcon/>>
+                            {formatUserName(user)}
                         </Button>
                     )}
                 </Toolbar>
