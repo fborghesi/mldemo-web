@@ -55,7 +55,7 @@ const Authorize = () => {
     }
 
     return (
-            <Box width="600px">
+            <Box width="600px" m={2} pt={3}>
             <h1>Thank you for registering.</h1>
             <p>An account for you has been created on the system, but it is peding approval by the administrator.</p>
             <p>Please try again later or contact the Aministrator to check for status.</p>
