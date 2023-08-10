@@ -1,6 +1,6 @@
 import { CircularProgress, Button } from "@mui/material";
 import { useRouter } from "next/router";
-import { useEffect } from "react";
+import { useState, useEffect } from "react";
 import { useAuthContext } from "../src/auth/AuthContext";
 import LoginIcon from '@mui/icons-material/Login';
 import { Box } from "@mui/system";
@@ -11,9 +11,15 @@ import { Base64 } from "js-base64";
 const Authorize = () => {
     const router = useRouter();
     const authContext = useAuthContext();
+    const [showProgress, setShowProgress] = useState<boolean>(true);
 
     useEffect(() => {
-        if (router.isReady && router.query.data) {
+        // router not ready, abort
+        if (!router.isReady)
+            return;
+        
+        // do we have any user data already?
+        if (router.query.data) {
             try {
                 const data = Base64.decode(router.query.data as string);
                 const {id, first_name, last_name, email, is_admin, is_active, token} = JSON.parse(data);
@@ -34,9 +40,13 @@ const Authorize = () => {
                 console.log(err);
             }
         }
+        else {
+            // no user data, display the thank you message
+            setShowProgress(false);
+        }
     }, [authContext, router]);
 
-    if (!router.isReady) {
+    if (showProgress) {
         return <CircularProgress />;
     }
 
