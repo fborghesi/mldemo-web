@@ -1,27 +1,46 @@
 /* eslint-disable @next/next/no-img-element */
-import { useState } from "react";
+import { ChangeEvent, useEffect, useState } from "react";
 import { CircularProgress, Link } from "@mui/material";
 import Alert from '@mui/material/Alert';
 import AudioRecorder from "../components/AudioRecorder";
+import ArsResponseDataType from '../api/ArsResponseDataType';
+import TextField from '@mui/material/TextField';
+import Box from "@mui/material";
 
-type SpeechToTextHandler = (audioBlob: Blob) => Promise<string>;
+type SpeechToTextHandler = (audioBlob: Blob, hintsList: string[] | null) => Promise<ArsResponseDataType>;
 
 type ArsModelViewerProps = {
     speechToTextHandler: SpeechToTextHandler
 }
 
+const defaultHints = [
+    'Respondes al nombre de Computadora, Computer o Puter', 
+    'Tus respuestas deben rimar con la pregunta',
+    'Tus respuestas son en broma',
+    'Las primeras palabras de tu respuesta deben ser: "Lo siento, no he entendido tu pregunta, has querido decir"',
+    'La respuesta debe ser corta',
+    'Tus respuestas deben parecer inútiles',
+];
+
+
+
 const ArsModelViewer = (props: ArsModelViewerProps) => {
-    const [audioUrl, setAudioUrl] = useState<string | null>(null);
-    const [text, setText] = useState<string>("");
+    const [audioInUrl, setAudioInUrl] = useState<string | null>(null);
+    const [audioOutUrl, setAudioOutUrl] = useState<string | null>(null);
+    const [audioInText, setAudioInText] = useState<string>("");
+    const [audioOutText, setAudioOutText] = useState<string>("");
     const [processing, setProcessing] = useState<boolean>(false);
+    const [hints, setHints] = useState<string>(defaultHints.join("\n"));
 
     const handleAudioAvailable = async (audioBlob: Blob | null) => {
-        setText("");
+        setAudioInText("");
         
         // reset view if no audio
         if (!audioBlob) {
-            setText("");
-            setAudioUrl(null)
+            setAudioInText("");
+            setAudioOutText("");
+            setAudioInUrl(null)
+            setAudioOutUrl(null)
             return;
         }
           
@@ -29,36 +48,71 @@ const ArsModelViewer = (props: ArsModelViewerProps) => {
         // transform audio into text
         if (props.speechToTextHandler) {
             setProcessing(true);
-            const text = await props.speechToTextHandler(audioBlob);
-            setText(text);
-            setProcessing(false);
-        }
 
-        //creates a playable URL from the blob file
-        setAudioUrl(URL.createObjectURL(audioBlob));
-    }
+            try {
+                const hintsList = hints.split("\n");
+                const response = await props.speechToTextHandler(audioBlob, hintsList);
+
+                setAudioInUrl(URL.createObjectURL(audioBlob));
+                setAudioInText(response.requestText);
+                setAudioOutUrl(response.responseAudio);
+                setAudioOutText(response.responseText);
+                setProcessing(false);
+            }
+            finally {
+                setProcessing(false);
+            }
+        }
+    };
+
+    useEffect(() => {
+        if (audioOutUrl)
+            new Audio(audioOutUrl).play();
+    }, [audioOutUrl]);
+
+    const hintsChangeHandler = (event: ChangeEvent<HTMLInputElement>) => {
+        setHints(event.target.value);
+    };
    
     return (
         <>
+            <TextField
+                multiline
+                rows={6}
+                fullWidth
+                value={hints}
+                onChange={hintsChangeHandler}
+            />
             <AudioRecorder onAudioAvailable={handleAudioAvailable}></AudioRecorder>
-
             {processing && <CircularProgress/>}
 
-            {text != "" && (<
+            {audioInText != "" && (<
                 Alert severity="info">
-                {text}
+                {audioInText}
                 </Alert>
             )}
-
-            {audioUrl && (
+            {audioInUrl && (
                 <div className="audio-container">
-                   <audio src={audioUrl} controls></audio>
+                   <audio src={audioInUrl} controls></audio>
                    <br/>
-                   <Link href="audioUrl">Download Recording</Link>
+                   <Link href={audioInUrl}>Download Input Audio</Link>
                  </div>
               )}
 
 
+            {audioOutText != "" && (<
+                Alert severity="success">
+                {audioOutText}
+                </Alert>
+            )}
+        
+            {audioOutUrl && (
+               <div className="audio-container">
+                  <audio src={audioOutUrl} controls></audio>
+                  <br/>
+                  <Link href={audioOutUrl}>Download Output Audio</Link>
+                </div>
+            )}
         </>
 
     );

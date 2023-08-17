@@ -1,5 +1,7 @@
 import axios, { AxiosError, AxiosRequestConfig, InternalAxiosRequestConfig } from "axios";
 import { UserType, LoggedUserType } from "./UserType";
+import ArsResponseDataType from "./ArsResponseDataType";
+import Base64Utils from "../utils/Base64Utils";
 
 type ExpiredTokenCallback = () => void;
 
@@ -25,6 +27,8 @@ const axiosInstance = axios.create({
         "Content-Type": "application/json",
     },
 });
+
+
 
 const extract_error_msg = (
     e: unknown,
@@ -206,8 +210,6 @@ export const MLDemoApi = {
     },
 
     speechToText: async (audioBlob: Blob): Promise<string> => {
-        //return Promise.resolve("This is a test message");
-
         try {
             const response = await axiosInstance.post(`/s2t-model`, audioBlob, {
                 headers: {
@@ -215,8 +217,10 @@ export const MLDemoApi = {
                 }
             });
             if (response.status == 200) {
-                const responseData = response.data.data;
-                return Promise.resolve(responseData.text);
+                const responseData = response.data;
+                //const text = responseData.data.text;
+                const text = responseData.data;
+                return Promise.resolve(text);
             } else {
                 return Promise.reject(JSON.parse(response.data.error));
             }
@@ -225,4 +229,35 @@ export const MLDemoApi = {
         }
     },
 
+
+    arsReply: async (audioBlob: Blob, hintsList: string[] | null): Promise<ArsResponseDataType> => {
+        const b64Audio = await Base64Utils.blobToBase64(audioBlob) as string;
+        if (!b64Audio)
+            return Promise.reject("No audio data available.");
+
+        try {
+            const data = {
+                audio: b64Audio.substring(b64Audio.indexOf(",") + 1),
+                hints: hintsList
+            };
+    
+            const response = await axiosInstance.post(`/ars-model`, data);
+
+            if (response.status == 200) {
+                const responseData = response.data;
+
+                const fixed: ArsResponseDataType = {
+                    ...responseData.data, 
+                    'responseAudio': "data:audio/mpeg;base64," + responseData.data.responseAudio }
+                
+                return Promise.resolve(
+                    fixed
+                );
+            } else {
+                return Promise.reject(JSON.parse(response.data.error));
+            }
+        } catch (e) {
+            return Promise.reject(extract_error_msg(e));
+        }
+    },
 };

@@ -40,7 +40,8 @@ export const AuthContextProvider = (props: { children: ReactNode }) => {
                     secure: SECURE_COOKIES_ENABLED,
                 };
 
-                console.log(`setCookie(${newUser?.token}, ${JSON.stringify(options)}) -> `, newUser);
+                // console.log(`setCookie(${newUser?.token}, ${JSON.stringify(options)}) -> `, newUser);
+                console.log(`setCookie(${newUser?.token}, ${JSON.stringify(options)}) -> `, newUser?.email);
                 setCookie(USER_KEY, JSON.stringify(newUser), options);
                 setUser(newUser);
                 MLDemoApi.setApiToken(newUser?.token, logout);
@@ -59,7 +60,8 @@ export const AuthContextProvider = (props: { children: ReactNode }) => {
     useEffect(() => {
         //const jsonUser = getCookie(USER_KEY)?.toString();
         const jsonUser = cookies[USER_KEY];
-        console.log(`getCookie() ->`, jsonUser);
+        // console.log(`getCookie() ->`, jsonUser);
+        console.log(`getCookie() ->`, jsonUser?.email);
         if (jsonUser) {
             try {
                 //const cookieUser = JSON.parse(jsonUser);
