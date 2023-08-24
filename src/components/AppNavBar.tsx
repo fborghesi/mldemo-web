@@ -9,7 +9,7 @@ import {
 } from "@mui/material";
 import LogoutIcon from '@mui/icons-material/Logout';
 import { useRouter } from "next/router";
-import React, { useState, MouseEvent } from "react";
+import React, { useState, useEffect, MouseEvent } from "react";
 import { UserType } from "../api/UserType";
 import { useAuthContext } from "../auth/AuthContext";
 
@@ -28,16 +28,23 @@ const MODELS: {name: string, path: string}[] = [
     {name: 'Car side recognition', path: '/car-model'},
     {name: 'Object recognition', path: '/object-model'},
     {name: 'Speech recognition', path: '/ars-model'},
+    {name: 'Food recognition', path: '/food-model'},
 ];
 
-
-
 const AppNavBar = (props: AppNavBarProps) => {
+    const [redirectPath, setRedirectPath] = useState<string | null>(null);
     const { user } = useAuthContext();
     const router = useRouter();
 
     const [anchorEl, setAnchorEl] = useState<HTMLElement | null>(null);
     const open = Boolean(anchorEl);
+
+    useEffect(() => {
+        if (router.isReady && redirectPath) {
+            router.replace(redirectPath);
+        }
+    }, [redirectPath]);
+
 
     const handleModelMenuClick = (event: MouseEvent<HTMLButtonElement>) => {
         setAnchorEl(event.currentTarget);

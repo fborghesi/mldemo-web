@@ -12,6 +12,7 @@ const Authorize = () => {
     const router = useRouter();
     const authContext = useAuthContext();
     const [showProgress, setShowProgress] = useState<boolean>(true);
+    const [redirectPath, setRedirectPath] = useState<string | null>(null);
 
     useEffect(() => {
         // router not ready, abort
@@ -35,7 +36,7 @@ const Authorize = () => {
                 }
                 
                 authContext!.setUser(user as LoggedUserType);
-                router.replace("/");
+                setRedirectPath("/dashboard");
             } catch(err) {
                 console.log(err);
             }
@@ -45,6 +46,12 @@ const Authorize = () => {
             setShowProgress(false);
         }
     }, [authContext, router]);
+
+    useEffect(() => {
+        if (router.isReady && redirectPath) {
+            router.replace(redirectPath);
+        }
+    }, [redirectPath]);
 
     if (showProgress) {
         return <CircularProgress />;
