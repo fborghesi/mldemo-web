@@ -1,11 +1,12 @@
-import React from "react";
+import React, { ChangeEvent } from "react";
 import { useEffect, useRef, useCallback, useState } from "react";
 import Webcam from "react-webcam";
 import * as tf from "@tensorflow/tfjs";
 import { Tensor4D } from "@tensorflow/tfjs";
 import { LayersModel } from "@tensorflow/tfjs-layers";
-import { Alert } from "@mui/material";
-import { gridDensityValueSelector } from "@mui/x-data-grid";
+import { Alert, Slider, Grid, Box} from "@mui/material";
+
+
 
 const IMG_WIDTH = 400;
 const IMG_HEIGHT = 400;
@@ -13,22 +14,60 @@ const IMG_HEIGHT = 400;
 const MODEL_WIDTH = 80;
 const MODEL_HEIGHT = 80;
 
-const TIMEOUT_MS = 1000;
+const MAX_PROB_THRESHOLD = 0.5;
+
+
+const LOOP_TIMEOUT = 100;
+const TIMEOUT_MS_MIN = 100;
+const TIMEOUT_MS_MAX = 1500;
+const TIMEOUT_MS_STEP = 100;
+const TIMEOUT_MS_DEFAULT = 300;
+// const TIMEOUT_MS_MARKS: {value: number, label: string}[] = range(TIMEOUT_MS_MIN, TIMEOUT_MS_MAX, TIMEOUT_MS_STEP).map(i => ({value: i, label: `${i}`}))
+
 
 const videoConstraints = {
     width: IMG_WIDTH,
     height: IMG_HEIGHT,
-    facingMode: "user",
-    //facingMode: { exact: "environment" }
+    //facingMode: "user",
+    facingMode: { ideal: "environment" }
 };
 
 
 
-const grayValue = (r: number, g: number, b: number): number => {
+const bwValue = (r: number, g: number, b: number): number => {
     return (r / 255 + g / 255 + b / 255) / 3;
 };
 
-const findMaxValueIndex = (values: Uint8Array | Float32Array | Int32Array): number => {
+
+// converts a color image into an array of BW pixels
+const imageData2BWArray = (imageData: ImageData, modelWidth: number): number[][][]  => {
+    const bwArray: number[][][] = [];
+    const line: number[][] = [];
+
+    for (let i = 0; i < imageData.data.length; i += 4) {
+        // each pixel is represented as an array of length 1
+        // containing the average RGB in a scale of 0 through 1
+        const bw = bwValue(
+            imageData.data[i],
+            imageData.data[i + 1],
+            imageData.data[i + 2]
+        );
+
+        // append one pixel to the line
+        line.push([bw]);
+
+        // line > MODEL_WIDTH pixels?
+        if (line.length == modelWidth) {
+            // append line and start with next one
+            bwArray.push([...line]);
+            line.length = 0;
+        }
+    }
+
+    return bwArray;
+};
+
+const findMaxValueIndex = (values: Uint8Array | Float32Array | Int32Array): [number, number] => {
     let maxValue = 0;
     let maxValueIndex = -1;
 
@@ -39,115 +78,130 @@ const findMaxValueIndex = (values: Uint8Array | Float32Array | Int32Array): numb
         }
     }
 
-    return maxValueIndex;
+    return [maxValueIndex, maxValue];
 };
 
+const getPredictionText = (values: Uint8Array | Float32Array | Int32Array): string => {
+    const [predictedClassIndex, predictedClassProb] = findMaxValueIndex(values);
+    if (predictedClassProb >= MAX_PROB_THRESHOLD) {
+        return `${classLabels[predictedClassIndex]} (${predictedClassProb.toFixed(9)})`;
+    }
+
+    return `None (${predictedClassProb.toFixed(9)} < ${MAX_PROB_THRESHOLD})`;
+};
+
+
+const predict = async (model: LayersModel, data: number[][][]) => {
+    const tensor = tf.tensor4d([data]);
+
+    const predictions = (model?.predict(tensor) as tf.Tensor).dataSync();            
+    if (predictions) {
+        const predictionArray = await predictions;
+        return getPredictionText(predictionArray);
+    }
+
+    return "";
+};
+
+
+
+
+
 const FoodModelViewer = () => {
+
     const webcamRef = useRef<Webcam>(null);
     const canvasRef = useRef<HTMLCanvasElement | null>(null);
+
+    const [tensorflowModel, setTensorflowModel] = useState<LayersModel | null>(null);
+    const [timeOutMs, setTimeOutMs] = useState<number>(TIMEOUT_MS_DEFAULT);
+    const [lastProcessingTime, setLastProcessingTime] = useState<number>(Date.now());
     const [timer, setTimer] = useState<NodeJS.Timeout | null>(null);
-    const [model, setModel] = useState<LayersModel | null>(null);
-    const [imageData, setImageData] = useState<ImageData | null>(null);
-    const [pred, setPred] = useState<string>("");
+    const [prediction, setPrediction] = useState<string>("");
+    const [processing, setProcessing] = useState<boolean>(false);
+    const [processImageOk, setProcessImageOk] = useState<boolean>(true);
 
     // takes a snapshot and update screenshotSrc property
-    const processSnapshot = () => {
-        const imgSrc = webcamRef?.current?.getScreenshot();
+    const timerTimeOutHandler = () => {
+        try {
+            setTimer(null);
+            
+            if (processing) return;
 
-        if (!canvasRef?.current || !imgSrc) {
-            updateTimer();
-            return;
+            const currentTime = Date.now();
+            if (currentTime - lastProcessingTime > timeOutMs) {
+                setProcessImageOk(true);
+            }
         }
-
-        const startTime = Date.now();
-        const img = new Image();
-        img.src = imgSrc;
-
-        const ctx = canvasRef?.current?.getContext("2d");
-        if (!ctx) return;
-        ctx.drawImage(
-            img,
-            0,
-            0,
-            IMG_WIDTH,
-            IMG_HEIGHT,
-            0,
-            0,
-            MODEL_WIDTH,
-            MODEL_HEIGHT
-        );
-        setImageData(ctx.getImageData(0, 0, MODEL_WIDTH, MODEL_HEIGHT));
-        console.log(`Canvas copy time: ${Date.now() - startTime} ms`);
-
-        updateTimer();
+        finally {     
+            updateTimer(LOOP_TIMEOUT);
+        }
     };
 
     useEffect(() => {
-        if (!imageData) return;
-        const startTime = Date.now();
+        
+        setProcessing(true);
+        setProcessImageOk(false);
 
-        const pict: number[][][] = [];
-        const line: number[][] = [];
+        try {
+            const ctx = canvasRef?.current?.getContext("2d");
+            const imgSrc = webcamRef?.current?.getScreenshot();
 
-        for (let i = 0; i < imageData.data.length; i += 4) {
-            // each pixel is represented as an array of length 1
-            // containing the average RGB in a scale of 0 through 1
-            const gray = grayValue(
-                imageData.data[i],
-                imageData.data[i + 1],
-                imageData.data[i + 2]
+            if (!tensorflowModel || !ctx || !imgSrc) return;
+            
+            // draw/resize the screenshot into the canvas
+            const img = new Image();
+            img.src = imgSrc;
+            ctx.drawImage(
+                img,
+                0, 0, IMG_WIDTH, IMG_HEIGHT,
+                0, 0, MODEL_WIDTH, MODEL_HEIGHT
             );
 
-            // append one pixel to the line
-            line.push([gray]);
+            // obtain the image data as pixels
+            const imageData = ctx.getImageData(0, 0, MODEL_WIDTH, MODEL_HEIGHT);
+            if (!imageData) return;
 
-            // line > MODEL_WIDTH pixels?
-            if (line.length == MODEL_WIDTH) {
-                // append line and start with next one
-                pict.push([...line]);
-                line.length = 0;
+            // connvert the image to grayscale
+            const bwData = imageData2BWArray(imageData, MODEL_WIDTH);
+            
+            // predicts and updates the prediction label
+            const updatePrediction = async (data: number[][][]) => {
+                const label = await predict(tensorflowModel, data);
+                setPrediction(label);
             }
+
+            // predict
+            updatePrediction(bwData);
         }
+        finally {
+            setLastProcessingTime(Date.now());
+            setProcessing(false);
+        }
+    }, [processImageOk]);
 
-        // create a tensor from an array of size 1 containing the
-        // image data
-        const pictData = [pict];
-        const tensor = tf.tensor4d(pictData);
-
-        const predict = async (tensor: Tensor4D) => {
-            const predictions = (model?.predict(tensor) as tf.Tensor).dataSync();            
-            let prediction = "";
-            if (predictions) {
-                const predictionArray = await predictions;
-                const predictedClassIndex = findMaxValueIndex(predictionArray);
-                const predictedClassLabel = predictedClassIndex >= 0 ? classLabels[predictedClassIndex] : "";
-                prediction = predictedClassLabel;
-            }
-
-            setPred(prediction);
+    useEffect(() => {
+        const loadModel = async () => {
+            const model = await tf.loadLayersModel("final_cnn_model_drop_out.json");
+            setTensorflowModel(model);
         };
-
-        // predict
-        predict(tensor);
-        console.log(`Prediction time: ${Date.now() - startTime} ms`);
-    }, [imageData]);
+        
+        loadModel();
+    }, []);
 
     // set the timer to take a snapshot every TIMEOUT_MS ms
-    const updateTimer = () => {
-        const t = setTimeout(processSnapshot, TIMEOUT_MS);
+    const updateTimer = (ms: number) => {
+        const t = setTimeout(timerTimeOutHandler, ms);
         setTimer(t);
     };
 
-    // load the tsjs model
-    const loadModel = async () => {
-        const m = await tf.loadLayersModel("final_cnn_model_drop_out.json");
-        setModel(m);
-    };
+    const timeOutMsChangeHandler = (e: Event, newValue: number | number[]) => {
+        console.log(`Setting refresh rate to ${newValue} ms.`);
+        setTimeOutMs(newValue as number);
+    }
 
     useEffect(() => {
         // componentDirMount
-        updateTimer();
-        loadModel();
+        updateTimer(timeOutMs);
 
         // componentWillUnmount
         return () => {
@@ -158,18 +212,47 @@ const FoodModelViewer = () => {
 
     return (
         <>
-            <Webcam
-                ref={webcamRef}
-                audio={false}
-                height={IMG_HEIGHT}
-                width={IMG_WIDTH}
-                screenshotFormat="image/jpeg"
-                videoConstraints={videoConstraints}
-            />
+            <Grid container spacing={1} alignItems="center" justifyContent="center">
+                <Grid item xs={6}>
+                    <Webcam
+                        ref={webcamRef}
+                        audio={false}
+                        height={IMG_HEIGHT}
+                        width={IMG_WIDTH}
+                        screenshotFormat="image/jpeg"
+                        videoConstraints={videoConstraints}
+                    />
+                </Grid>
+                <Grid item xs={4}>
+                    <Grid container>
+                        <Grid item xs={12} alignItems={"center"} justifyContent={"center"}>
+                            <canvas 
+                                ref={canvasRef} 
+                                width={MODEL_WIDTH} 
+                                height={MODEL_HEIGHT} 
+                            />
+                        </Grid>
 
-            <canvas ref={canvasRef} width={MODEL_WIDTH} height={MODEL_HEIGHT} />
+                        <Grid item xs={12}>
+                            Refresh rate (ms):
+                            <Slider 
+                                defaultValue={TIMEOUT_MS_DEFAULT}                                 
+                                valueLabelDisplay="auto" 
+                                onChange={timeOutMsChangeHandler} 
+                                min={TIMEOUT_MS_MIN}
+                                max={TIMEOUT_MS_MAX}
+                                step={TIMEOUT_MS_STEP}
+                            />
+                        </Grid>
+                    </Grid>
+                </Grid>
+                
+                <Grid item xs={6}></Grid>
 
-            <Alert severity="success">Prediction: {pred}</Alert>
+            </Grid>
+
+            <Alert severity="success">Prediction: {prediction}</Alert>
+
         </>
     );
 };
