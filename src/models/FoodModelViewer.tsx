@@ -2,10 +2,9 @@ import React, { ChangeEvent } from "react";
 import { useEffect, useRef, useCallback, useState } from "react";
 import Webcam from "react-webcam";
 import * as tf from "@tensorflow/tfjs";
-import { Tensor4D } from "@tensorflow/tfjs";
 import { LayersModel } from "@tensorflow/tfjs-layers";
 import { Alert, Slider, Grid, Box} from "@mui/material";
-
+import useInterval from "../utils/useInterval";
 
 
 const IMG_WIDTH = 400;
@@ -17,7 +16,6 @@ const MODEL_HEIGHT = 80;
 const MAX_PROB_THRESHOLD = 0.5;
 
 
-const LOOP_TIMEOUT = 100;
 const TIMEOUT_MS_MIN = 100;
 const TIMEOUT_MS_MAX = 1500;
 const TIMEOUT_MS_STEP = 100;
@@ -106,53 +104,46 @@ const predict = async (model: LayersModel, data: number[][][]) => {
 
 
 
-
 const FoodModelViewer = () => {
+    // takes a snapshot and update snapshotImg property if timeoutMs elapsed
+    const intervalHandler = () => {
+        console.log("Interval Handler invoked");     
 
+        // take snapshot
+        const imgSrc = webcamRef?.current?.getScreenshot();
+        if (imgSrc) {
+
+            // capture the snapshot and save it on snapshotImg
+            const img = new Image();
+            img.src = imgSrc;
+            setSnapshotImg(img);
+        }
+    };
+    const [timeoutMs, setTimeoutMs] = useState<number>(TIMEOUT_MS_DEFAULT);
+    const {start, setDelay, clear} = useInterval(intervalHandler, timeoutMs);
     const webcamRef = useRef<Webcam>(null);
     const canvasRef = useRef<HTMLCanvasElement | null>(null);
 
     const [tensorflowModel, setTensorflowModel] = useState<LayersModel | null>(null);
-    const [timeOutMs, setTimeOutMs] = useState<number>(TIMEOUT_MS_DEFAULT);
-    const [lastProcessingTime, setLastProcessingTime] = useState<number>(Date.now());
-    const [timer, setTimer] = useState<NodeJS.Timeout | null>(null);
     const [prediction, setPrediction] = useState<string>("");
-    const [processing, setProcessing] = useState<boolean>(false);
-    const [processImageOk, setProcessImageOk] = useState<boolean>(true);
+    const processingRef = useRef<boolean>(false);
+    const [snapshotImg, setSnapshotImg] = useState<CanvasImageSource | null>(null); // the latest snapshot taken
+    
 
-    // takes a snapshot and update screenshotSrc property
-    const timerTimeOutHandler = () => {
-        try {
-            setTimer(null);
-            
-            if (processing) return;
-
-            const currentTime = Date.now();
-            if (currentTime - lastProcessingTime > timeOutMs) {
-                setProcessImageOk(true);
-            }
-        }
-        finally {     
-            updateTimer(LOOP_TIMEOUT);
-        }
-    };
-
+    // update delay when timer moves
+    useEffect(() => {setDelay(timeoutMs)}, [timeoutMs]);
+    
+    // predict when snapshot image changes
     useEffect(() => {
-        
-        setProcessing(true);
-        setProcessImageOk(false);
-
-        try {
+        try {            
             const ctx = canvasRef?.current?.getContext("2d");
-            const imgSrc = webcamRef?.current?.getScreenshot();
-
-            if (!tensorflowModel || !ctx || !imgSrc) return;
+            if (processingRef.current || !tensorflowModel || !ctx || !snapshotImg) return;
             
-            // draw/resize the screenshot into the canvas
-            const img = new Image();
-            img.src = imgSrc;
+            processingRef.current = true;
+            
+            // capture the snapshot and save it on snapshotImg
             ctx.drawImage(
-                img,
+                snapshotImg,
                 0, 0, IMG_WIDTH, IMG_HEIGHT,
                 0, 0, MODEL_WIDTH, MODEL_HEIGHT
             );
@@ -174,41 +165,30 @@ const FoodModelViewer = () => {
             updatePrediction(bwData);
         }
         finally {
-            setLastProcessingTime(Date.now());
-            setProcessing(false);
+            processingRef.current = false;
         }
-    }, [processImageOk]);
+    }, [snapshotImg])
 
+    // init
     useEffect(() => {
         const loadModel = async () => {
             const model = await tf.loadLayersModel("final_cnn_model_drop_out.json");
             setTensorflowModel(model);
+            start();
         };
         
         loadModel();
-    }, []);
 
-    // set the timer to take a snapshot every TIMEOUT_MS ms
-    const updateTimer = (ms: number) => {
-        const t = setTimeout(timerTimeOutHandler, ms);
-        setTimer(t);
-    };
+        return () => {
+            clear();
+        }
+    }, []);
 
     const timeOutMsChangeHandler = (e: Event, newValue: number | number[]) => {
         console.log(`Setting refresh rate to ${newValue} ms.`);
-        setTimeOutMs(newValue as number);
+        processingRef.current = false;
+    setTimeoutMs(newValue as number);
     }
-
-    useEffect(() => {
-        // componentDirMount
-        updateTimer(timeOutMs);
-
-        // componentWillUnmount
-        return () => {
-            // clear timer if it's not null
-            timer && clearTimeout(timer);
-        };
-    }, []);
 
     return (
         <>
